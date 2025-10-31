@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"log"
 	"net"
 	"os"
+	"strings"
 
 	"github.com/joho/godotenv"
 )
@@ -27,12 +29,27 @@ func main() {
 
 	//Connect to the server
 	conn, err := net.Dial("tcp", "localhost:"+port)
+
 	if err != nil {
 		log.Fatal("Error connecting to server: ", err)
 	}
+	defer conn.Close()
 
-	fmt.Println("Connected to server")
+	//Blocking call to read the port from the server
+	serverDedicatedport, err := bufio.NewReader(conn).ReadString('\n')
+	if err != nil {
+		log.Fatal("Error reading port from server: ", err)
+	}
+
+	// Trim newline and whitespace from the received port
+	serverDedicatedport = strings.TrimSpace(serverDedicatedport)
+
+	fmt.Println("Connected to server and server is using port to communicate with me is ", serverDedicatedport)
 	
-	//Close the connection
-	conn.Close()
+	//Now we send a simple message to the server on the new port
+	newconn, err := net.Dial("tcp", "localhost:"+serverDedicatedport)
+	if err != nil {
+		log.Fatal("Error connecting to server: ", err)
+	}
+	newconn.Write([]byte("Hello server from client on port " + serverDedicatedport + "\n"))
 }
