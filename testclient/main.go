@@ -12,6 +12,7 @@ import (
 )
 
 var port string
+var serverAddress string
 
 func main() {
 	fmt.Println("Starting test client...")
@@ -21,14 +22,22 @@ func main() {
 		log.Println("Warning: .env file not found in parent directory")
 	}
 
+	//Get the port from the environment file
 	port = os.Getenv("SERVER_CONNECTIONS_PORT")
 	if port == "" {
 		log.Println("Port not found in environment file, Using default port 7734")
 		port = "7734"
 	}
 
-	//Connect to the server
-	conn, err := net.Dial("tcp", "localhost:"+port)
+	//Get the server address from the environment file
+	serverAddress = os.Getenv("SERVER_ADDRESS")
+	if serverAddress == "" {
+		log.Println("Server address not found in environment file, Using default address localhost")
+		serverAddress = "localhost"
+	}
+
+	//Connect to the server for registration
+	conn, err := net.Dial("tcp", serverAddress+":"+port)
 
 	if err != nil {
 		log.Fatal("Error connecting to server: ", err)
@@ -47,7 +56,7 @@ func main() {
 	fmt.Println("Connected to server and server is using port to communicate with me is ", serverDedicatedport)
 	
 	//Now we send a simple message to the server on the new port
-	newconn, err := net.Dial("tcp", "localhost:"+serverDedicatedport)
+	newconn, err := net.Dial("tcp", serverAddress+":"+serverDedicatedport)
 	if err != nil {
 		log.Fatal("Error connecting to server: ", err)
 	}

@@ -65,6 +65,7 @@ func handleClientConnection(conn net.Conn, clientID int) error {
 				if err == io.EOF {
 					log.Printf("Client %d disconnected from port %s", clientID, currentPort)
 					returnPort(currentPort)
+					
 				} else {
 					log.Printf("Error reading message from client %d: %v", clientID, err)
 				}
@@ -131,6 +132,8 @@ func main() {
 	//Main thread will exit on user interrupt signal
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+
+	//The main thread is the receiver of the interrupt signal from the user and blocks here
 	<-sigChan
 
 	fmt.Println("Server is shutting down...")
