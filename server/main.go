@@ -83,6 +83,7 @@ func handleClientConnection(conn net.Conn, clientID int) error {
 				}
 				fmt.Println("AddStruct: RFC_Number: ", addStruct.RFC_Number, " RFC_Title: ", addStruct.RFC_Title, " Client_IP: ", addStruct.Client_IP, " Client_Upload_Port: ", addStruct.Client_Upload_Port, " Client_Application_Version: ", addStruct.Client_Application_Version)
 			}
+			
 		}
 	}()	
 	return nil
