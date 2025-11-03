@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"log"
 	"net"
 	"strconv"
+	"strings"
 	"sync"
 )
 
@@ -59,4 +61,14 @@ func returnPort(port string) {
 	// Add back to the stack
 	freePortsStack = append(freePortsStack, port)
 	log.Printf("Returned port %s to pool (Available: %d)", port, len(freePortsStack))
+}
+
+//Helper function to read the file names from the client 
+func readFileNamesFromClient(conn net.Conn) ([]string, error) {
+	reader := bufio.NewReader(conn)
+	message, err := reader.ReadString('\n')
+	if err != nil {
+		return nil, err
+	}
+	return strings.Split(message, ","), nil
 }

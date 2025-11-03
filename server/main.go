@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"io"
 	"log"
 	"net"
 	"os"
@@ -60,18 +59,18 @@ func handleClientConnection(conn net.Conn, clientID int) error {
 		defer connfromclient.Close()
 		reader := bufio.NewReader(connfromclient)
 		for {
-			message, err := reader.ReadString('\n')
+			message, err := reader.ReadBytes(byte('\n'))
 			if err != nil {
-				if err == io.EOF {
-					log.Printf("Client %d disconnected from port %s", clientID, currentPort)
-					returnPort(currentPort)
-					
-				} else {
-					log.Printf("Error reading message from client %d: %v", clientID, err)
-				}
+				log.Println("Error reading message from client: ", err)
 				return
 			}
-			fmt.Println("Message from client ", clientID, " on port ", currentPort, " is: ", strings.TrimSpace(message))
+
+			addStruct, err := DeserializeAddStruct(message)
+			if err != nil {
+				log.Println("Error deserializing AddStruct: ", err)
+				return
+			}
+			fmt.Println("AddStruct: RFC_Number: ", addStruct.RFC_Number, " RFC_Title: ", addStruct.RFC_Title, " Client_IP: ", addStruct.Client_IP, " Client_Upload_Port: ", addStruct.Client_Upload_Port, " Client_Application_Version: ", addStruct.Client_Application_Version)
 		}
 	}()	
 	return nil
