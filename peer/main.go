@@ -11,6 +11,8 @@ import (
 	"strings"
 	"syscall"
 
+	common_helpers "P2P/common-helpers"
+
 	"github.com/joho/godotenv"
 )	
 
@@ -121,6 +123,8 @@ func main() {
 		}
 
 		//Now we send the serialized AddStruct to the server
+		//Add the index of the struct type (AddStructIndex) at the start of the serializedAddStruct
+		serializedAddStruct = append([]byte{byte(common_helpers.AddStructIndex)}, serializedAddStruct...)
 		serializedAddStruct = append(serializedAddStruct, '\n')
 		newconn.Write(serializedAddStruct)
 	}

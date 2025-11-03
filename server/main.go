@@ -10,6 +10,8 @@ import (
 	"strings"
 	"syscall"
 
+	common_helpers "P2P/common-helpers"
+
 	"github.com/joho/godotenv"
 )
 
@@ -26,7 +28,7 @@ func createServerAcceptConnectionsSocket() (net.Listener, error) {
 
 func handleClientConnection(conn net.Conn, clientID int) error {
 	//Now the server will create a new TCP socket on a port which is available from the global stack of free ports
-	currentPort, err := getFreePort()
+	currentPort, err := common_helpers.GetFreePort()
 	if err != nil {
 		log.Printf("Error getting free port for client %d: %v", clientID, err)
 		return err
@@ -57,6 +59,7 @@ func handleClientConnection(conn net.Conn, clientID int) error {
 	//Now we need to listen for messages from the client on the new socket
 	go func() {
 		defer connfromclient.Close()
+		defer common_helpers.ReturnPort(currentPort)
 		reader := bufio.NewReader(connfromclient)
 		for {
 			message, err := reader.ReadBytes(byte('\n'))
@@ -65,12 +68,21 @@ func handleClientConnection(conn net.Conn, clientID int) error {
 				return
 			}
 
-			addStruct, err := DeserializeAddStruct(message)
-			if err != nil {
-				log.Println("Error deserializing AddStruct: ", err)
-				return
+			//The first byte of the message is the index of the struct type
+			structType := message[0]
+			//Convert the byte to an int
+			structTypeInt := int(structType)
+			switch structTypeInt {
+			case common_helpers.AddStructIndex:
+				// Skip the first byte (struct type index) and the last byte (newline)
+				jsonData := message[1 : len(message)-1]
+				addStruct, err := DeserializeAddStruct(jsonData)
+				if err != nil {
+					log.Println("Error deserializing AddStruct: ", err)
+					return
+				}
+				fmt.Println("AddStruct: RFC_Number: ", addStruct.RFC_Number, " RFC_Title: ", addStruct.RFC_Title, " Client_IP: ", addStruct.Client_IP, " Client_Upload_Port: ", addStruct.Client_Upload_Port, " Client_Application_Version: ", addStruct.Client_Application_Version)
 			}
-			fmt.Println("AddStruct: RFC_Number: ", addStruct.RFC_Number, " RFC_Title: ", addStruct.RFC_Title, " Client_IP: ", addStruct.Client_IP, " Client_Upload_Port: ", addStruct.Client_Upload_Port, " Client_Application_Version: ", addStruct.Client_Application_Version)
 		}
 	}()	
 	return nil
