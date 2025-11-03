@@ -16,6 +16,10 @@ var (
 	portStackMu    sync.Mutex
 )
 
+var AddStructIndex = 1
+var ListStructIndex = 2
+var LookupStructIndex = 3
+
 func init() {
 	for i := 4000; i < 7000; i++ {
 		freePortsStack = append(freePortsStack, strconv.Itoa(i))
