@@ -18,6 +18,12 @@ import (
 var port string
 var clientCounter int = 0
 
+// A global unordered map of Peer Info mapping hostname to upload port
+var peerInfoMap = make(map[string]string)
+
+//A global unordered map of RFC Indexes mapping from hostname to a list whose elements are a list of size 2 containing the RFC number and the RFC title
+var rfcIndexMap = make(map[string][][]string)
+
 func createServerAcceptConnectionsSocket() (net.Listener, error) {
 	listener, err := net.Listen("tcp", ":"+port)
 	if err != nil {
@@ -60,6 +66,9 @@ func handleClientConnection(conn net.Conn, clientID int) error {
 	go func() {
 		defer connfromclient.Close()
 		defer common_helpers.ReturnPort(currentPort)
+		defer delete(peerInfoMap, connfromclient.RemoteAddr().String())
+		defer delete(rfcIndexMap, connfromclient.RemoteAddr().String())
+
 		reader := bufio.NewReader(connfromclient)
 		for {
 			message, err := reader.ReadBytes(byte('\n'))
@@ -82,6 +91,41 @@ func handleClientConnection(conn net.Conn, clientID int) error {
 					return
 				}
 				fmt.Println("AddStruct: RFC_Number: ", addStruct.RFC_Number, " RFC_Title: ", addStruct.RFC_Title, " Client_IP: ", addStruct.Client_IP, " Client_Upload_Port: ", addStruct.Client_Upload_Port, " Client_Application_Version: ", addStruct.Client_Application_Version)
+
+				//If the rfc index map doesn't have the client IP, create a new list first
+				if _, ok := rfcIndexMap[addStruct.Client_IP]; !ok {
+					rfcIndexMap[addStruct.Client_IP] = make([][]string, 0)
+				}
+
+				// Add the RFC number and title to the list
+				// If the RFC number and title are already in the list, no need to add them again
+				alreadyExists := false
+
+				//TODO: Optimize this to use a hash map instead of a linear search
+				for _, rfcInfo := range rfcIndexMap[addStruct.Client_IP] {
+					if len(rfcInfo) == 2 && rfcInfo[0] == addStruct.RFC_Number && rfcInfo[1] == addStruct.RFC_Title {
+						fmt.Println("RFC number and title already in list, no need to add them again")
+						alreadyExists = true
+						break
+					}
+				}
+				if alreadyExists {
+					continue
+				}
+				hostname := strings.Split(addStruct.Client_IP, ":")[0]
+				rfcIndexMap[hostname] = append(rfcIndexMap[hostname], []string{addStruct.RFC_Number, addStruct.RFC_Title})
+				fmt.Println("Client IP: ", hostname, " RFC number and title added to list: ", addStruct.RFC_Number, " ", addStruct.RFC_Title)
+
+				//If the client IP is already in the map, no need to add it again
+				if _, ok := peerInfoMap[addStruct.Client_IP]; ok {
+					fmt.Println("Client IP already in map, no need to add it again")
+					continue
+				}
+				peerInfoMap[addStruct.Client_IP] = addStruct.Client_Upload_Port
+				//Split client IP into hostname and port
+				peerInfoMap[hostname] = addStruct.Client_Upload_Port
+				fmt.Println("Client IP added to map: ", hostname, " ", addStruct.Client_Upload_Port)
+
 			case common_helpers.LookupStructIndex:
 				// Skip the first byte (struct type index) and the last byte (newline)
 				jsonData := message[1 : len(message)-1]
@@ -103,7 +147,7 @@ func handleClientConnection(conn net.Conn, clientID int) error {
 			}
 			
 		}
-	}()	
+	}()
 	return nil
 }
 
