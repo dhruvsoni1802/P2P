@@ -14,3 +14,21 @@ func DeserializeAddStruct(b []byte) (data.AddStruct, error) {
 	}
 	return addStruct, nil
 }
+
+func DeserializeLookUpStruct(b []byte) (data.LookUpStruct, error) {
+	var lookUpStruct data.LookUpStruct
+	err := json.Unmarshal(b, &lookUpStruct)
+	if err != nil {
+		return lookUpStruct, err
+	}
+	return lookUpStruct, nil
+}
+
+func DeserializeListStruct(b []byte) (data.ListStruct, error) {
+	var listStruct data.ListStruct
+	err := json.Unmarshal(b, &listStruct)
+	if err != nil {
+		return listStruct, err
+	}
+	return listStruct, nil
+}

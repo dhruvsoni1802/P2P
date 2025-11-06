@@ -14,3 +14,19 @@ func SerializeAddStruct(addStruct data.AddStruct) ([]byte, error) {
 	return json, nil
 }
 
+
+func SerializeLookUpStruct(lookUpStruct data.LookUpStruct) ([]byte, error) {
+	json, err := json.Marshal(lookUpStruct)
+	if err != nil {
+		return nil, err
+	}
+	return json, nil
+}
+
+func SerializeListStruct(listStruct data.ListStruct) ([]byte, error) {
+	json, err := json.Marshal(listStruct)
+	if err != nil {
+		return nil, err
+	}
+	return json, nil
+}

@@ -82,6 +82,24 @@ func handleClientConnection(conn net.Conn, clientID int) error {
 					return
 				}
 				fmt.Println("AddStruct: RFC_Number: ", addStruct.RFC_Number, " RFC_Title: ", addStruct.RFC_Title, " Client_IP: ", addStruct.Client_IP, " Client_Upload_Port: ", addStruct.Client_Upload_Port, " Client_Application_Version: ", addStruct.Client_Application_Version)
+			case common_helpers.LookupStructIndex:
+				// Skip the first byte (struct type index) and the last byte (newline)
+				jsonData := message[1 : len(message)-1]
+				lookUpStruct, err := DeserializeLookUpStruct(jsonData)
+				if err != nil {
+					log.Println("Error deserializing LookUpStruct: ", err)
+					return
+				}
+				fmt.Println("LookUpStruct: RFC_Number: ", lookUpStruct.RFC_Number, " RFC_Title: ", lookUpStruct.RFC_Title, " Client_IP: ", lookUpStruct.Client_IP, " Client_Upload_Port: ", lookUpStruct.Client_Upload_Port, " Client_Application_Version: ", lookUpStruct.Client_Application_Version)
+			case common_helpers.ListStructIndex:
+				// Skip the first byte (struct type index) and the last byte (newline)
+				jsonData := message[1 : len(message)-1]
+				listStruct, err := DeserializeListStruct(jsonData)
+				if err != nil {
+					log.Println("Error deserializing ListStruct: ", err)
+					return
+				}
+				fmt.Println("ListStruct: Client_IP: ", listStruct.Client_IP, " Client_Upload_Port: ", listStruct.Client_Upload_Port, " Client_Application_Version: ", listStruct.Client_Application_Version)
 			}
 			
 		}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	common_helpers "P2P/common-helpers"
 	"P2P/common-helpers/data"
 	"bufio"
 	"fmt"
@@ -11,8 +12,6 @@ import (
 	"strings"
 	"syscall"
 
-	common_helpers "P2P/common-helpers"
-
 	"github.com/joho/godotenv"
 )	
 
@@ -22,6 +21,12 @@ var fileNames[] string
 
 func main() {
 	fmt.Println("Starting test client...")
+
+	//Keep the connection alive until user interrupt signal
+	// We need to block the main go routine to keep the client running
+	//Main thread will exit on user interrupt signal
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 
 	err := godotenv.Load("../.env")
 	if err != nil {
@@ -129,14 +134,138 @@ func main() {
 		newconn.Write(serializedAddStruct)
 	}
 
-	//Keep the connection alive until user interrupt signal
-	// We need to block the main go routine to keep the client running
-	//Main thread will exit on user interrupt signal
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	//A while true loop, which waits for a user input command
+	go func() {
+		for {
+			fmt.Print("Enter command: ")
+			scanner := bufio.NewScanner(os.Stdin)
+			scanner.Scan()
+			input := strings.TrimSpace(scanner.Text())
+			
+			if input == "" {
+				fmt.Println("Error: empty command")
+				continue
+			}
+			
+			parts := strings.Fields(input)
+			
+			// Validate format: METHOD RFC/ALL VERSION Host:value Port:value Title:value
+			if len(parts) < 3 {
+				fmt.Println("Error: insufficient arguments")
+				continue
+			}
+			
+			method := strings.ToUpper(parts[0])
+			if method != "ADD" && method != "LOOKUP" && method != "LIST" {
+				fmt.Println("Error: invalid method")
+				continue
+			}
+			
+			rfc := parts[1]
+			if method == "LIST" && rfc != "ALL" {
+				fmt.Println("Error: LIST requires ALL parameter")
+				continue
+			}
+			if method != "LIST" && !strings.HasPrefix(rfc, "RFC") {
+				fmt.Println("Error: invalid RFC format")
+				continue
+			}
+			
+			// version := parts[2]
+			// if version != "P2P-CI/1.0" {
+			// 	fmt.Println("Error: invalid version")
+			// 	continue
+			// }
+			
+			// Parse headers
+			headers := make(map[string]string)
+			for i := 3; i < len(parts); i++ {
+				if strings.Contains(parts[i], ":") {
+					kv := strings.SplitN(parts[i], ":", 2)
+					if len(kv) == 2 {
+						headers[strings.TrimSpace(kv[0])] = strings.TrimSpace(kv[1])
+					}
+				}
+			}
+			
+			// Validate required headers
+			if _, ok := headers["Host"]; !ok {
+				fmt.Println("Error: missing Host header")
+				continue
+			}
+			if _, ok := headers["Port"]; !ok {
+				fmt.Println("Error: missing Port header")
+				continue
+			}
+			if _, ok := headers["Title"]; !ok {
+				fmt.Println("Error: missing Title header")
+				continue
+			}
+			
+			fmt.Println("Valid input from the user")
 
-	//The main thread is the receiver of the interrupt signal from the user and blocks here
+			if method == "ADD" {
+				//Create a new AddStruct
+				addStruct := data.AddStruct{
+					RFC_Number: parts[2],
+					RFC_Title: headers["Title"],
+					Client_IP: headers["Host"],
+					Client_Upload_Port: headers["Port"],
+					Client_Application_Version: ApplicationVersion,
+				}
+
+				serializedAddStruct, err := SerializeAddStruct(addStruct)
+				if err != nil {
+					log.Fatal("Error serializing AddStruct: ", err)
+				}
+
+				serializedAddStruct = append([]byte{byte(common_helpers.AddStructIndex)}, serializedAddStruct...)
+				serializedAddStruct = append(serializedAddStruct, '\n')
+				newconn.Write(serializedAddStruct)
+				fmt.Println("AddStruct sent to server")
+			}
+			if method == "LOOKUP" {
+				//Create a new LookUpStruct
+				lookUpStruct := data.LookUpStruct{
+					RFC_Number: parts[2],
+					RFC_Title: headers["Title"],
+					Client_IP: headers["Host"],
+					Client_Upload_Port: headers["Port"],
+					Client_Application_Version: ApplicationVersion,
+				}
+
+				serializedLookUpStruct, err := SerializeLookUpStruct(lookUpStruct)
+				if err != nil {
+					log.Fatal("Error serializing LookUpStruct: ", err)
+				}
+
+				serializedLookUpStruct = append([]byte{byte(common_helpers.LookupStructIndex)}, serializedLookUpStruct...)
+				serializedLookUpStruct = append(serializedLookUpStruct, '\n')
+				newconn.Write(serializedLookUpStruct)
+				fmt.Println("LookUpStruct sent to server")
+			}
+			if method == "LIST" {
+				//Create a new ListStruct
+				listStruct := data.ListStruct{
+					Client_IP: headers["Host"],
+					Client_Upload_Port: headers["Port"],
+					Client_Application_Version: ApplicationVersion,
+				}
+
+				serializedListStruct, err := SerializeListStruct(listStruct)
+				if err != nil {
+					log.Fatal("Error serializing ListStruct: ", err)
+				}
+
+				serializedListStruct = append([]byte{byte(common_helpers.ListStructIndex)}, serializedListStruct...)
+				serializedListStruct = append(serializedListStruct, '\n')
+				newconn.Write(serializedListStruct)
+				fmt.Println("ListStruct sent to server")
+			}
+		}
+	}()
+
 	<-sigChan
-
 	fmt.Println("Client is shutting down...")
+	os.Exit(0)
 }
