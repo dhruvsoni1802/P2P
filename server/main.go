@@ -8,9 +8,11 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 
 	common_helpers "P2P/common-helpers"
+	"P2P/common-helpers/data"
 
 	"github.com/joho/godotenv"
 )
@@ -20,9 +22,11 @@ var clientCounter int = 0
 
 // A global unordered map of Peer Info mapping hostname to upload port
 var peerInfoMap = make(map[string]string)
+var peerInfoMapMutex sync.RWMutex
 
 //A global unordered map of RFC Indexes mapping from hostname to a list whose elements are a list of size 2 containing the RFC number and the RFC title
 var rfcIndexMap = make(map[string][][]string)
+var rfcIndexMapMutex sync.RWMutex
 
 func createServerAcceptConnectionsSocket() (net.Listener, error) {
 	listener, err := net.Listen("tcp", ":"+port)
@@ -73,7 +77,7 @@ func handleClientConnection(conn net.Conn, clientID int) error {
 		for {
 			message, err := reader.ReadBytes(byte('\n'))
 			if err != nil {
-				log.Println("Error reading message from client: ", err)
+				fmt.Println("Error reading message from client: ", err)
 				return
 			}
 
@@ -86,14 +90,67 @@ func handleClientConnection(conn net.Conn, clientID int) error {
 				// Skip the first byte (struct type index) and the last byte (newline)
 				jsonData := message[1 : len(message)-1]
 				addStruct, err := DeserializeAddStruct(jsonData)
+
+				//We will create a ServerResponseHeader and ServerResponseData structs
+				serverResponseHeader := data.ServerResponseHeader{
+					Response_Code: 200,
+					Response_Phrase: "OK",
+					Server_Application_Version: ApplicationVersion,
+				}
+				serverResponseData := data.ServerResponseData{
+					RFC_Number: addStruct.RFC_Number,
+					RFC_Title: addStruct.RFC_Title,
+					Client_IP: addStruct.Client_IP,
+					Client_Upload_Port: addStruct.Client_Upload_Port,
+				}
+
+				serverResponse := data.ServerResponse{
+					Header: serverResponseHeader,
+					Data: []data.ServerResponseData{},
+				}
+
 				if err != nil {
-					log.Println("Error deserializing AddStruct: ", err)
+					fmt.Println("Error deserializing AddStruct: ", err)
+					serverResponse.Header.Response_Code = 400
+					serverResponseHeader.Response_Phrase = "Bad Request"
+
+					//We need to serialize the serverResponse struct into a byte array and then send it back to the client
+					serializedServerResponse, err := SerializeServerResponse(serverResponse)
+					if err != nil {
+						log.Println("Error serializing ServerResponse: ", err)
+					}
+
+					serializedServerResponse = append(serializedServerResponse, '\n')
+					connfromclient.Write(serializedServerResponse)
 					return
 				}
+
+
 				fmt.Println("AddStruct: RFC_Number: ", addStruct.RFC_Number, " RFC_Title: ", addStruct.RFC_Title, " Client_IP: ", addStruct.Client_IP, " Client_Upload_Port: ", addStruct.Client_Upload_Port, " Client_Application_Version: ", addStruct.Client_Application_Version)
+
+				//We check if the client application version is same as the server application version
+				//If not, we send a response back to the client with the response code 505 and the response phrase "P2P-CI Version Not Supported"
+				if addStruct.Client_Application_Version != ApplicationVersion {
+					log.Println("Application version mismatch: ", addStruct.Client_Application_Version, " != ", ApplicationVersion)
+					serverResponse.Header.Response_Code = 505
+					serverResponseHeader.Response_Phrase = "P2P-CI Version Not Supported"
+
+					//We need to serialize the serverResponse struct into a byte array and then send it back to the client
+					serializedServerResponse, err := SerializeServerResponse(serverResponse)
+					if err != nil {
+						log.Println("Error serializing ServerResponse: ", err)
+					}
+
+					serializedServerResponse = append(serializedServerResponse, '\n')
+					connfromclient.Write(serializedServerResponse)
+					return
+				}
 
 				//If the rfc index map doesn't have the client IP, create a new list first
 				if _, ok := rfcIndexMap[addStruct.Client_IP]; !ok {
+					//Add a RW Mutex for adding information to the rfcIndexMap
+					rfcIndexMapMutex.Lock()
+					defer rfcIndexMapMutex.Unlock()
 					rfcIndexMap[addStruct.Client_IP] = make([][]string, 0)
 				}
 
@@ -121,10 +178,21 @@ func handleClientConnection(conn net.Conn, clientID int) error {
 					fmt.Println("Client IP already in map, no need to add it again")
 					continue
 				}
-				peerInfoMap[addStruct.Client_IP] = addStruct.Client_Upload_Port
-				//Split client IP into hostname and port
+
+				//Add a RW Mutex for adding information to the peerInfoMap
+				peerInfoMapMutex.Lock()
+				defer peerInfoMapMutex.Unlock()
 				peerInfoMap[hostname] = addStruct.Client_Upload_Port
 				fmt.Println("Client IP added to map: ", hostname, " ", addStruct.Client_Upload_Port)
+
+				serverResponse.Data = append(serverResponse.Data, serverResponseData)
+				serializedServerResponse, err := SerializeServerResponse(serverResponse)
+				if err != nil {
+						log.Println("Error serializing ServerResponse: ", err)
+				}
+
+				serializedServerResponse = append(serializedServerResponse, '\n')
+				connfromclient.Write(serializedServerResponse)
 
 			case common_helpers.LookupStructIndex:
 				// Skip the first byte (struct type index) and the last byte (newline)
@@ -134,7 +202,10 @@ func handleClientConnection(conn net.Conn, clientID int) error {
 					log.Println("Error deserializing LookUpStruct: ", err)
 					return
 				}
+
+
 				fmt.Println("LookUpStruct: RFC_Number: ", lookUpStruct.RFC_Number, " RFC_Title: ", lookUpStruct.RFC_Title, " Client_IP: ", lookUpStruct.Client_IP, " Client_Upload_Port: ", lookUpStruct.Client_Upload_Port, " Client_Application_Version: ", lookUpStruct.Client_Application_Version)
+				
 			case common_helpers.ListStructIndex:
 				// Skip the first byte (struct type index) and the last byte (newline)
 				jsonData := message[1 : len(message)-1]
@@ -186,7 +257,7 @@ func main() {
 		port = "7734"
 	}
 
-	//Create a TCP socket to accept connections from clients
+	//Create a TCP socket to accept connections from clients 
 	listener,err := createServerAcceptConnectionsSocket()
 	if err != nil {
 		log.Fatal("Error creating server accept connections socket: ", err)

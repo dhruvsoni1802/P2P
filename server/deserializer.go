@@ -9,6 +9,8 @@ import (
 func DeserializeAddStruct(b []byte) (data.AddStruct, error) {
 	var addStruct data.AddStruct
 	err := json.Unmarshal(b, &addStruct)
+
+	//If unmarshalling of the AddStruct fails, this means that byte array got corrupted on network transmission
 	if err != nil {
 		return addStruct, err
 	}
