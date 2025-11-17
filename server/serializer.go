@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 )
 
-//Function to convert ServerResponse into a byte array
+// SerializeServerResponse converts ServerResponse into a JSON byte array
 func SerializeServerResponse(serverResponse data.ServerResponse) ([]byte, error) {
-	json, err := json.Marshal(serverResponse)
+	jsonData, err := json.Marshal(serverResponse)
 	if err != nil {
 		return nil, err
 	}
-	return json, nil
+	return jsonData, nil
 }

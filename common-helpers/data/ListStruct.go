@@ -1,7 +1,8 @@
 package data
 
+// ListStruct represents the data structure for listing all RFCs
 type ListStruct struct {
-	Client_IP string
-	Client_Upload_Port string
-	Client_Application_Version string
+	ClientIP                 string `json:"Client_IP"`
+	ClientUploadPort         string `json:"Client_Upload_Port"`
+	ClientApplicationVersion string `json:"Client_Application_Version"`
 }

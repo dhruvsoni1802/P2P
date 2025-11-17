@@ -5,28 +5,29 @@ import (
 	"encoding/json"
 )
 
-//Function to convert AddStruct into a byte array
+// SerializeAddStruct converts AddStruct into a JSON byte array
 func SerializeAddStruct(addStruct data.AddStruct) ([]byte, error) {
-	json, err := json.Marshal(addStruct)
+	jsonData, err := json.Marshal(addStruct)
 	if err != nil {
 		return nil, err
 	}
-	return json, nil
+	return jsonData, nil
 }
 
-
+// SerializeLookUpStruct converts LookUpStruct into a JSON byte array
 func SerializeLookUpStruct(lookUpStruct data.LookUpStruct) ([]byte, error) {
-	json, err := json.Marshal(lookUpStruct)
+	jsonData, err := json.Marshal(lookUpStruct)
 	if err != nil {
 		return nil, err
 	}
-	return json, nil
+	return jsonData, nil
 }
 
+// SerializeListStruct converts ListStruct into a JSON byte array
 func SerializeListStruct(listStruct data.ListStruct) ([]byte, error) {
-	json, err := json.Marshal(listStruct)
+	jsonData, err := json.Marshal(listStruct)
 	if err != nil {
 		return nil, err
 	}
-	return json, nil
+	return jsonData, nil
 }

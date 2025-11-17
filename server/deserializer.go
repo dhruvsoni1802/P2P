@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 )
 
-//Function to convert a byte array into an AddStruct
+// DeserializeAddStruct converts a JSON byte array into an AddStruct
 func DeserializeAddStruct(b []byte) (data.AddStruct, error) {
 	var addStruct data.AddStruct
 	err := json.Unmarshal(b, &addStruct)
@@ -17,6 +17,7 @@ func DeserializeAddStruct(b []byte) (data.AddStruct, error) {
 	return addStruct, nil
 }
 
+// DeserializeLookUpStruct converts a JSON byte array into a LookUpStruct
 func DeserializeLookUpStruct(b []byte) (data.LookUpStruct, error) {
 	var lookUpStruct data.LookUpStruct
 	err := json.Unmarshal(b, &lookUpStruct)
@@ -26,6 +27,7 @@ func DeserializeLookUpStruct(b []byte) (data.LookUpStruct, error) {
 	return lookUpStruct, nil
 }
 
+// DeserializeListStruct converts a JSON byte array into a ListStruct
 func DeserializeListStruct(b []byte) (data.ListStruct, error) {
 	var listStruct data.ListStruct
 	err := json.Unmarshal(b, &listStruct)

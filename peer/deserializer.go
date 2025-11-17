@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 )
 
-//Function to convert a byte array into an AddStruct
+// DeserializeServerResponse converts a JSON byte array into a ServerResponse struct
 func DeserializeServerResponse(b []byte) (data.ServerResponse, error) {
 	var serverResponse data.ServerResponse
 	err := json.Unmarshal(b, &serverResponse)
