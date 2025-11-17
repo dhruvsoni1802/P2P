@@ -1,7 +1,6 @@
 package main
 
 import (
-	"P2P/common-helpers/data"
 	"bufio"
 	"fmt"
 	"log"
@@ -12,131 +11,199 @@ import (
 	"syscall"
 
 	common_helpers "P2P/common-helpers"
+	"P2P/common-helpers/data"
 
 	"github.com/joho/godotenv"
-)	
+)
 
-var port string
-var serverAddress string
-var fileNames[] string
+var (
+	serverPort    string
+	serverAddress string
+	fileNames     []string
+)
 
-func main() {
-	fmt.Println("Starting test client...")
-
-	err := godotenv.Load("../.env")
-	if err != nil {
+// loadConfig loads configuration from environment variables
+func loadConfig() {
+	if err := godotenv.Load("../.env"); err != nil {
 		log.Println("Warning: .env file not found in parent directory")
 	}
 
-	//Get the port from the environment file
-	port = os.Getenv("SERVER_CONNECTIONS_PORT")
-	if port == "" {
-		log.Println("Port not found in environment file, Using default port 7734")
-		port = "7734"
+	serverPort = os.Getenv("SERVER_CONNECTIONS_PORT")
+	if serverPort == "" {
+		log.Printf("Using default server port %s", DefaultServerPort)
+		serverPort = DefaultServerPort
 	}
 
-	//Get the server address from the environment file
 	serverAddress = os.Getenv("SERVER_IP_ADDRESS")
 	if serverAddress == "" {
-		log.Println("Server address not found in environment file, Using default address localhost")
+		log.Println("Using default server address: localhost")
 		serverAddress = "localhost"
 	}
+}
 
-	//Connect to the server for registration on 7734
-	conn, err := net.Dial("tcp", serverAddress+":"+port)
-
+// connectToServer establishes initial connection and gets dedicated port
+func connectToServer() (net.Conn, error) {
+	// Initial connection to get dedicated port assignment
+	initialConn, err := net.Dial("tcp", serverAddress+":"+serverPort)
 	if err != nil {
-		log.Fatal("Error connecting to server: ", err)
+		return nil, fmt.Errorf("failed to connect to server: %w", err)
 	}
-	defer conn.Close()
+	defer initialConn.Close()
 
-	//Blocking call to read the port from the server
-	serverDedicatedport, err := bufio.NewReader(conn).ReadString('\n')
+	// Read dedicated port from server
+	dedicatedPort, err := bufio.NewReader(initialConn).ReadString('\n')
 	if err != nil {
-		log.Fatal("Error reading port from server: ", err)
+		return nil, fmt.Errorf("failed to read dedicated port: %w", err)
 	}
 
-	// Trim newline and whitespace from the received port
-	serverDedicatedport = strings.TrimSpace(serverDedicatedport)
+	dedicatedPort = strings.TrimSpace(dedicatedPort)
+	log.Printf("Server assigned dedicated port: %s", dedicatedPort)
 
-	fmt.Println("Connected to server and server is using port to communicate with me is ", serverDedicatedport)
-	
-	//Now we send a simple message to the server on the new port
-	newconn, err := net.Dial("tcp", serverAddress+":"+serverDedicatedport)
-
+	// Connect to dedicated port
+	dedicatedConn, err := net.Dial("tcp", serverAddress+":"+dedicatedPort)
 	if err != nil {
-		log.Fatal("Error connecting to server: ", err)
+		return nil, fmt.Errorf("failed to connect to dedicated port: %w", err)
 	}
-	defer newconn.Close()
 
-	//Retrieve the available filenames from the RFC directory
-	filenames, err := os.ReadDir("./RFCs")
+	return dedicatedConn, nil
+}
+
+// loadRFCFiles loads available RFC files from the RFCs directory
+func loadRFCFiles() error {
+	entries, err := os.ReadDir("./RFCs")
 	if err != nil {
-		log.Fatal("Error reading RFC directory: ", err)
+		return fmt.Errorf("error reading RFC directory: %w", err)
 	}
 
-	for _, filename := range filenames {
-		fmt.Println("Available filename: ", filename.Name())
-		fileNames = append(fileNames, filename.Name())
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			fileNames = append(fileNames, entry.Name())
+			log.Printf("Found RFC file: %s", entry.Name())
+		}
 	}
 
-	//We take the random port for uploading files here
-	randomPort, err := getRandomUploadPort()
-	if err != nil {
-		log.Fatal("Error getting random port: ", err)
-	}
+	return nil
+}
 
-	fmt.Println("Random port for uploading files is: ", randomPort)
+// registerRFCs registers all available RFCs with the server
+func registerRFCs(conn net.Conn, uploadPort string) error {
+	reader := bufio.NewReader(conn)
 
-	//Now we create a new TCP socket on the random port
-	randomPortSocket, err := net.Listen("tcp", ":"+randomPort)
-	if err != nil {
-		log.Fatal("Error creating new TCP socket on random port: ", err)
-	}
-	defer randomPortSocket.Close()
-
-	//We will iterate over the file names
 	for _, filename := range fileNames {
+		// Parse filename format: Number_title.txt
+		parts := strings.Split(filename, "_")
+		if len(parts) < 2 {
+			log.Printf("Skipping invalid filename format: %s", filename)
+			continue
+		}
 
-		//Now we create a new AddStruct for the client
-		//Split the filename which is of format Number_title.txt
-		//Trim the title to remove the .txt extension
-		filenameParts := strings.Split(filename, "_")
-		RFC_Number := filenameParts[0]
-		RFC_Title := filenameParts[1]
-		RFC_Title = strings.TrimSuffix(RFC_Title, ".txt")
-
-		fmt.Println("RFC_Number: ", RFC_Number, " RFC_Title: ", RFC_Title)
-
+		rfcNumber := parts[0]
+		rfcTitle := strings.TrimSuffix(parts[1], ".txt")
 
 		addStruct := data.AddStruct{
-			RFC_Number: RFC_Number,
-			RFC_Title: RFC_Title,
-			Client_IP: newconn.RemoteAddr().String(),
-			Client_Upload_Port: randomPort,
-			Client_Application_Version: ApplicationVersion,
+			RFCNumber:                rfcNumber,
+			RFCTitle:                 rfcTitle,
+			ClientIP:                 conn.LocalAddr().String(),
+			ClientUploadPort:         uploadPort,
+			ClientApplicationVersion: ApplicationVersion,
 		}
 
-		serializedAddStruct, err := SerializeAddStruct(addStruct)
+		serialized, err := SerializeAddStruct(addStruct)
 		if err != nil {
-			log.Fatal("Error serializing AddStruct: ", err)
+			return fmt.Errorf("error serializing RFC %s: %w", rfcNumber, err)
 		}
 
-		//Now we send the serialized AddStruct to the server
-		//Add the index of the struct type (AddStructIndex) at the start of the serializedAddStruct
-		serializedAddStruct = append([]byte{byte(common_helpers.AddStructIndex)}, serializedAddStruct...)
-		serializedAddStruct = append(serializedAddStruct, '\n')
-		newconn.Write(serializedAddStruct)
+		message := append([]byte{byte(common_helpers.AddStructIndex)}, serialized...)
+		message = append(message, '\n')
+
+		if _, err := conn.Write(message); err != nil {
+			return fmt.Errorf("error sending RFC %s: %w", rfcNumber, err)
+		}
+
+		// Read and consume the server response
+		_, err = readServerResponse(reader, conn)
+		if err != nil {
+			log.Printf("Warning: Failed to read response for RFC %s: %v", rfcNumber, err)
+		}
+
+		log.Printf("Registered RFC %s: %s", rfcNumber, rfcTitle)
 	}
 
-	//Keep the connection alive until user interrupt signal
-	// We need to block the main go routine to keep the client running
-	//Main thread will exit on user interrupt signal
+	return nil
+}
+
+// startCommandLoop starts the interactive command loop
+func startCommandLoop(conn net.Conn) {
+	scanner := bufio.NewScanner(os.Stdin)
+	reader := bufio.NewReader(conn)
+	for {
+		fmt.Print("\nEnter command (ADD/LOOKUP/LIST): ")
+
+		if !scanner.Scan() {
+			break
+		}
+
+		input := scanner.Text()
+		if err := executeCommand(conn, input, reader); err != nil {
+			fmt.Printf("Error: %v\n", err)
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		log.Printf("Scanner error: %v", err)
+	}
+}
+
+func main() {
+	log.Println("P2P Client starting...")
+
+	// Load configuration
+	loadConfig()
+
+	// Connect to server
+	serverConn, err := connectToServer()
+
+
+	if err != nil {
+		log.Fatalf("Connection failed: %v", err)
+	}
+	defer serverConn.Close()
+
+	log.Println("Successfully connected to server")
+
+	// Load available RFC files
+	if err := loadRFCFiles(); err != nil {
+		log.Fatalf("Failed to load RFC files: %v", err)
+	}
+
+	// Get random port for upload server
+	uploadPort, err := getRandomUploadPort()
+	if err != nil {
+		log.Fatalf("Failed to get upload port: %v", err)
+	}
+	log.Printf("Upload server will use port: %s", uploadPort)
+
+	// Create upload listener
+	uploadListener, err := net.Listen("tcp", ":"+uploadPort)
+	if err != nil {
+		log.Fatalf("Failed to create upload listener: %v", err)
+	}
+	defer uploadListener.Close()
+
+	// Register all RFCs with server
+	if err := registerRFCs(serverConn, uploadPort); err != nil {
+		log.Fatalf("Failed to register RFCs: %v", err)
+	}
+
+	log.Println("All RFCs registered successfully")
+
+	// Start command loop in goroutine
+	go startCommandLoop(serverConn)
+
+	// Wait for shutdown signal
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-
-	//The main thread is the receiver of the interrupt signal from the user and blocks here
 	<-sigChan
 
-	fmt.Println("Client is shutting down...")
+	log.Println("Client shutting down...")
 }
