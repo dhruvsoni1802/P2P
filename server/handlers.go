@@ -177,8 +177,48 @@ func handleLookupRequest(conn net.Conn, jsonData []byte) error {
 		lookUpStruct.RFCNumber, lookUpStruct.RFCTitle,
 		lookUpStruct.ClientIP, lookUpStruct.ClientUploadPort)
 
-	// TODO: Implement lookup logic to search RFC index and return matching peers
-	return nil
+	// Validate application version
+	if lookUpStruct.ClientApplicationVersion != ApplicationVersion {
+		log.Printf("Version mismatch: client=%s, server=%s",
+			lookUpStruct.ClientApplicationVersion, ApplicationVersion)
+		return sendErrorResponse(conn, StatusVersionNotSupported, "P2P-CI Version Not Supported")
+	}
+
+	//We create an empty array of ServerResponseData
+	responseData := []data.ServerResponseData{}
+
+	// Iterate through the complete rfcIndexMap
+	for clientIP, rfcInfoArray := range rfcIndexMap {
+			
+		// Now iterate through each RFC pair for this clientIP
+		for _, rfcInfo := range rfcInfoArray {
+				
+				// Now we do a lookup in peerInfoMap to get the upload port
+				uploadPort, ok := peerInfoMap[clientIP]
+				if !ok {
+						log.Printf("Upload port not found for client %s", clientIP)
+						continue
+				}
+
+				// Now we add the RFC information to the responseData
+				if lookUpStruct.RFCNumber == rfcInfo[0] && lookUpStruct.RFCTitle == rfcInfo[1] {
+				responseData = append(responseData, data.ServerResponseData{
+						RFCNumber: rfcInfo[0],
+						RFCTitle: rfcInfo[1],
+						ClientIP: clientIP,
+						ClientUploadPort: uploadPort,
+				})
+			}
+		}
+	}
+
+	//If the responseData is empty, we send an error response
+	if len(responseData) == 0 {
+		return sendErrorResponse(conn, StatusNotFound, "Not Found")
+	}
+
+	//Now we send the responseData to the client
+	return sendSuccessResponse(conn, responseData)
 }
 
 // handleListRequest processes a LIST request from a client
@@ -189,8 +229,15 @@ func handleListRequest(conn net.Conn, jsonData []byte) error {
 		return sendErrorResponse(conn, StatusBadRequest, "Bad Request")
 	}
 
-	log.Printf("LIST request from %s:%s",
-		listStruct.ClientIP, listStruct.ClientUploadPort)
+	log.Printf("LIST request from %s:%s with application version %s",
+		listStruct.ClientIP, listStruct.ClientUploadPort, listStruct.ClientApplicationVersion)
+
+	// Validate application version
+	if listStruct.ClientApplicationVersion != ApplicationVersion {
+		log.Printf("Version mismatch: client=%s, server=%s",
+			listStruct.ClientApplicationVersion, ApplicationVersion)
+		return sendErrorResponse(conn, StatusVersionNotSupported, "P2P-CI Version Not Supported")
+	}
 
 	//We create an empty array of ServerResponseData
 	responseData := []data.ServerResponseData{}
@@ -217,7 +264,7 @@ func handleListRequest(conn net.Conn, jsonData []byte) error {
 				})
 		}
 	}
-	
+
 	//Now we send the responseData to the client
 	return sendSuccessResponse(conn, responseData)
 }

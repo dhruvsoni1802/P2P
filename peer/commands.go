@@ -59,7 +59,12 @@ func parseCommand(input string) (*Command, error) {
 		return nil, fmt.Errorf("ADD and LOOKUP require numeric RFC number")
 	}
 
-	version := parts[3]
+	var version string
+	if method == "LIST" {
+		version = parts[2]
+	} else {
+		version = parts[3]
+	}
 
 	// Parse data section of the command
 	dataSection := make(map[string]string)
@@ -158,7 +163,7 @@ func sendLookupRequest(conn net.Conn, cmd *Command, reader *bufio.Reader) error 
 		RFCTitle:                 cmd.DataSection["Title"],
 		ClientIP:                 cmd.DataSection["Host"],
 		ClientUploadPort:         cmd.DataSection["Port"],
-		ClientApplicationVersion: ApplicationVersion,
+		ClientApplicationVersion: cmd.Version,
 	}
 
 	serialized, err := SerializeLookUpStruct(lookupStruct)
@@ -174,6 +179,27 @@ func sendLookupRequest(conn net.Conn, cmd *Command, reader *bufio.Reader) error 
 	}
 
 	fmt.Println("LOOKUP request sent successfully")
+
+	//Now we wait for the server response
+	serverResponse, err := readServerResponse(reader, conn)
+	if err != nil {
+		return fmt.Errorf("error reading server response: %w", err)
+	}
+
+	fmt.Printf("Server response: %+v", serverResponse)
+
+	switch serverResponse.Header.ResponseCode {
+	case StatusOK:
+		fmt.Println("RFC lookup response received successfully")
+	case StatusBadRequest:
+		fmt.Println("Error: Bad Request")
+	case StatusNotFound:
+		fmt.Println("Error: Not Found")
+	case StatusVersionNotSupported:
+		fmt.Println("Error: P2P-CI Version Not Supported")
+	default:
+		fmt.Println("Error: Unknown server response code")
+	}
 	return nil
 }
 
@@ -182,7 +208,7 @@ func sendListRequest(conn net.Conn, cmd *Command, reader *bufio.Reader) error {
 	listStruct := data.ListStruct{
 		ClientIP:                 cmd.DataSection["Host"],
 		ClientUploadPort:         cmd.DataSection["Port"],
-		ClientApplicationVersion: ApplicationVersion,
+		ClientApplicationVersion: cmd.Version,
 	}
 
 	serialized, err := SerializeListStruct(listStruct)

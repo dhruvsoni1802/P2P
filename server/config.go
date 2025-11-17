@@ -11,5 +11,6 @@ const (
 	// HTTP status code equivalents for P2P protocol
 	StatusOK                  = 200
 	StatusBadRequest          = 400
+	StatusNotFound            = 404
 	StatusVersionNotSupported = 505
 )
