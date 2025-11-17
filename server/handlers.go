@@ -33,14 +33,14 @@ func sendErrorResponse(conn net.Conn, code int, phrase string) error {
 }
 
 // sendSuccessResponse sends a success response with data to the client
-func sendSuccessResponse(conn net.Conn, responseData data.ServerResponseData) error {
+func sendSuccessResponse(conn net.Conn, responseData []data.ServerResponseData) error {
 	response := data.ServerResponse{
 		Header: data.ServerResponseHeader{
 			ResponseCode:             StatusOK,
 			ResponsePhrase:           "OK",
 			ServerApplicationVersion: ApplicationVersion,
 		},
-		Data: []data.ServerResponseData{responseData},
+		Data: responseData,
 	}
 
 	serialized, err := SerializeServerResponse(response)
@@ -144,7 +144,7 @@ func handleAddRequest(conn net.Conn, jsonData []byte) error {
 			ClientIP:         addStruct.ClientIP,
 			ClientUploadPort: addStruct.ClientUploadPort,
 		}
-		return sendSuccessResponse(conn, responseData)
+		return sendSuccessResponse(conn, []data.ServerResponseData{responseData})
 	}
 
 	// Add RFC to index
@@ -162,7 +162,7 @@ func handleAddRequest(conn net.Conn, jsonData []byte) error {
 		ClientIP:         addStruct.ClientIP,
 		ClientUploadPort: addStruct.ClientUploadPort,
 	}
-	return sendSuccessResponse(conn, responseData)
+	return sendSuccessResponse(conn, []data.ServerResponseData{responseData})
 }
 
 // handleLookupRequest processes a LOOKUP request from a client
@@ -192,8 +192,34 @@ func handleListRequest(conn net.Conn, jsonData []byte) error {
 	log.Printf("LIST request from %s:%s",
 		listStruct.ClientIP, listStruct.ClientUploadPort)
 
-	// TODO: Implement list logic to return all RFCs
-	return nil
+	//We create an empty array of ServerResponseData
+	responseData := []data.ServerResponseData{}
+
+	// Iterate through the complete rfcIndexMap
+	for clientIP, rfcInfoArray := range rfcIndexMap {
+			
+		// Now iterate through each RFC pair for this clientIP
+		for _, rfcInfo := range rfcInfoArray {
+				
+				// Now we do a lookup in peerInfoMap to get the upload port
+				uploadPort, ok := peerInfoMap[clientIP]
+				if !ok {
+						log.Printf("Upload port not found for client %s", clientIP)
+						continue
+				}
+
+				// Now we add the RFC information to the responseData
+				responseData = append(responseData, data.ServerResponseData{
+						RFCNumber: rfcInfo[0],
+						RFCTitle: rfcInfo[1],
+						ClientIP: clientIP,
+						ClientUploadPort: uploadPort,
+				})
+		}
+	}
+	
+	//Now we send the responseData to the client
+	return sendSuccessResponse(conn, responseData)
 }
 
 // handleClientMessages listens for and processes messages from a client connection

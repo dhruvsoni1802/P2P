@@ -79,7 +79,7 @@ func parseCommand(input string) (*Command, error) {
 	if _, ok := dataSection["Port"]; !ok {
 		return nil, fmt.Errorf("missing Port header")
 	}
-	if _, ok := dataSection["Title"]; !ok {
+	if _, ok := dataSection["Title"]; !ok && method != "LIST" {
 		return nil, fmt.Errorf("missing Title header")
 	}
 
@@ -198,7 +198,28 @@ func sendListRequest(conn net.Conn, cmd *Command, reader *bufio.Reader) error {
 	}
 
 	fmt.Println("LIST request sent successfully")
+
+	//Now we wait for server response
+	//Now we wait for the server response
+	serverResponse, err := readServerResponse(reader, conn)
+	if err != nil {
+		return fmt.Errorf("error reading server response: %w", err)
+	}
+
+	fmt.Printf("Server response: %+v", serverResponse)
+
+	switch serverResponse.Header.ResponseCode {
+	case StatusOK:
+		fmt.Println("RFC list response received successfully")
+	case StatusBadRequest:
+		fmt.Println("Error: Bad Request")
+	case StatusVersionNotSupported:
+		fmt.Println("Error: P2P-CI Version Not Supported")
+	default:
+		fmt.Println("Error: Unknown server response code")
+	}
 	return nil
+
 }
 
 // executeCommand parses and executes a command
