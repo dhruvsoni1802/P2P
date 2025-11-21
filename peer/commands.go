@@ -96,6 +96,28 @@ func parseCommand(input string) (*Command, error) {
 	}, nil
 }
 
+//Format the server response converting the struct to a string
+func formatServerResponse(serverResponse data.ServerResponse) string {
+	var result strings.Builder
+
+	// First line: version <sp> status code <sp> phrase <cr> <lf>
+	result.WriteString(fmt.Sprintf("%s %d %s\r\n",
+		serverResponse.Header.ServerApplicationVersion,
+		serverResponse.Header.ResponseCode,
+		serverResponse.Header.ResponsePhrase))
+
+	// For each RFC in the data array
+	for _, rfcData := range serverResponse.Data {
+		result.WriteString(fmt.Sprintf("%s %s %s %s\r\n",
+			rfcData.RFCNumber,
+			rfcData.RFCTitle,
+			rfcData.ClientIP,
+			rfcData.ClientUploadPort))
+	}
+
+	return result.String()
+}
+
 // readServerResponse reads a server response from the connection
 func readServerResponse(reader *bufio.Reader, conn net.Conn) (data.ServerResponse, error) {
 	conn.SetReadDeadline(time.Now().Add(ServerResponseTimeout))
@@ -110,6 +132,7 @@ func readServerResponse(reader *bufio.Reader, conn net.Conn) (data.ServerRespons
 	if err != nil {
 			return data.ServerResponse{}, fmt.Errorf("error deserializing server response: %w", err)
 	}
+
 	return serverResponseData, nil
 }
 
@@ -139,6 +162,8 @@ func sendAddRequest(conn net.Conn, cmd *Command, reader *bufio.Reader) error {
 
 	//Now we wait for the server response
 	serverResponse, err := readServerResponse(reader, conn)
+	serverResponseString := formatServerResponse(serverResponse)
+	fmt.Printf("Server response:\n%s", serverResponseString)
 	if err != nil {
 		return fmt.Errorf("error reading server response: %w", err)
 	}
@@ -182,12 +207,14 @@ func sendLookupRequest(conn net.Conn, cmd *Command, reader *bufio.Reader) error 
 
 	//Now we wait for the server response
 	serverResponse, err := readServerResponse(reader, conn)
+	serverResponseString := formatServerResponse(serverResponse)
 	if err != nil {
 		return fmt.Errorf("error reading server response: %w", err)
 	}
 
-	fmt.Printf("Server response: %+v", serverResponse)
+	fmt.Printf("Server response:\n%s", serverResponseString)
 
+	//TODO: Remove later
 	switch serverResponse.Header.ResponseCode {
 	case StatusOK:
 		fmt.Println("RFC lookup response received successfully")
@@ -232,7 +259,8 @@ func sendListRequest(conn net.Conn, cmd *Command, reader *bufio.Reader) error {
 		return fmt.Errorf("error reading server response: %w", err)
 	}
 
-	fmt.Printf("Server response: %+v", serverResponse)
+	serverResponseString := formatServerResponse(serverResponse)
+	fmt.Printf("Server response:\n%s", serverResponseString)
 
 	switch serverResponse.Header.ResponseCode {
 	case StatusOK:
