@@ -193,11 +193,16 @@ func sendSuccessResponse(conn net.Conn, rfcNumber string) error {
 
 	// Find the RFC file with the given number
 	var rfcFilePath string
+	var rfcTitle string
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			filename := entry.Name()
 			if strings.HasPrefix(filename, rfcNumber+"_") {
 				rfcFilePath = "./RFCs/" + filename
+				// Extract title from filename: <RFC_NUMBER>_<TITLE>.txt
+				// Remove the RFC number prefix and .txt suffix
+				titleWithExt := strings.TrimPrefix(filename, rfcNumber+"_")
+				rfcTitle = strings.TrimSuffix(titleWithExt, ".txt")
 				break
 			}
 		}
@@ -229,6 +234,7 @@ func sendSuccessResponse(conn net.Conn, rfcNumber string) error {
 		LastModifiedDateandTime: fileInfo.ModTime().Format(time.RFC3339),
 		ContentLength:           fmt.Sprintf("%d", len(responseData)),
 		ContentType:             "text/plain",
+		RFCTitle:                rfcTitle,
 	}
 
 	serialized, err := SerializePeerResponse(responseHeader, string(responseData))

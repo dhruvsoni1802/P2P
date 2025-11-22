@@ -10,5 +10,6 @@ type PeerResponseHeader struct {
 	LastModifiedDateandTime   string
 	ContentLength             string
 	ContentType               string
+	RFCTitle                  string
 }
 
