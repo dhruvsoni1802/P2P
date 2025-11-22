@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"net"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -106,30 +107,30 @@ func parseCommand(input string) (*Command, error) {
 	}, nil
 }
 
-func sendGetCommand(input string) (data.PeerResponseHeader, string, error) {
+func sendGetCommand(input string) (data.PeerResponseHeader, string, string, error) {
 	input = strings.TrimSpace(input)
 	if input == "" {
-		return data.PeerResponseHeader{}, "", fmt.Errorf("empty command")
+		return data.PeerResponseHeader{}, "", "", fmt.Errorf("empty command")
 	}
 
 	parts := strings.Fields(input)
 	if len(parts) < 4 {
-		return data.PeerResponseHeader{}, "", fmt.Errorf("insufficient arguments")
+		return data.PeerResponseHeader{}, "", "", fmt.Errorf("insufficient arguments")
 	}
 
 	method := strings.ToUpper(parts[0])
 	if method != "GET" {
-		return data.PeerResponseHeader{}, "", fmt.Errorf("invalid method: must be GET")
+		return data.PeerResponseHeader{}, "", "", fmt.Errorf("invalid method: must be GET")
 	}
 
 	rfcString := parts[1]
 	if rfcString != "RFC" {
-		return data.PeerResponseHeader{}, "", fmt.Errorf("GET requires RFC parameter")
+		return data.PeerResponseHeader{}, "", "", fmt.Errorf("GET requires RFC parameter")
 	}
 
 	rfcNumber := parts[2]
 	if !isNumeric(rfcNumber) {
-		return data.PeerResponseHeader{}, "", fmt.Errorf("RFC number must be numeric")
+		return data.PeerResponseHeader{}, "", "", fmt.Errorf("RFC number must be numeric")
 	}
 
 	version := parts[3]
@@ -147,10 +148,10 @@ func sendGetCommand(input string) (data.PeerResponseHeader, string, error) {
 
 	// Validate required headers
 	if _, ok := dataSection["Host"]; !ok {
-		return data.PeerResponseHeader{}, "", fmt.Errorf("missing Host header")
+		return data.PeerResponseHeader{}, "", "", fmt.Errorf("missing Host header")
 	}
 	if _, ok := dataSection["OS"]; !ok {
-		return data.PeerResponseHeader{}, "", fmt.Errorf("missing OS header")
+		return data.PeerResponseHeader{}, "", "", fmt.Errorf("missing OS header")
 	}
 
 	//Now we create a new TCP socket to make the GET request to the other peer
@@ -159,7 +160,7 @@ func sendGetCommand(input string) (data.PeerResponseHeader, string, error) {
 
 	conn, err := net.Dial("tcp", fmt.Sprintf("%s:%s", hostIP, hostPort))
 	if err != nil {
-		return data.PeerResponseHeader{}, "", fmt.Errorf("error connecting to peer: %w", err)
+		return data.PeerResponseHeader{}, "", "", fmt.Errorf("error connecting to peer: %w", err)
 	}
 
 	//Now we first figure out on which port we just created the TCP socket
@@ -176,13 +177,13 @@ func sendGetCommand(input string) (data.PeerResponseHeader, string, error) {
 	//Now we serialize the request
 	serializedRequest, err := SerializePeerRequest(request)
 	if err != nil {
-		return data.PeerResponseHeader{}, "", fmt.Errorf("error serializing peer request: %w", err)
+		return data.PeerResponseHeader{}, "", "", fmt.Errorf("error serializing peer request: %w", err)
 	}
 
 	//Now we send the request to the other peer
 	message := append(serializedRequest, '\n')
 	if _, err := conn.Write(message); err != nil {
-		return data.PeerResponseHeader{}, "", fmt.Errorf("error sending GET request: %w", err)
+		return data.PeerResponseHeader{}, "", "", fmt.Errorf("error sending GET request: %w", err)
 	}
 
 	fmt.Println("GET request sent successfully")
@@ -191,10 +192,10 @@ func sendGetCommand(input string) (data.PeerResponseHeader, string, error) {
 	reader := bufio.NewReader(conn)
 	peerResponseHeader, peerResponseData, err := readPeerResponse(reader, conn)
 	if err != nil {
-		return data.PeerResponseHeader{}, "",	 fmt.Errorf("error reading peer response: %w", err)
+		return data.PeerResponseHeader{}, "", "", fmt.Errorf("error reading peer response: %w", err)
 	}
 
-	return peerResponseHeader, peerResponseData, nil
+	return peerResponseHeader, peerResponseData, rfcNumber, nil
 }
 
 //Format the server response converting the struct to a string
@@ -244,6 +245,11 @@ func formatPeerResponse(peerResponseHeader data.PeerResponseHeader, peerResponse
 	// Content-Type header
 	result.WriteString(fmt.Sprintf("Content-Type: %s\r\n", peerResponseHeader.ContentType))
 
+	// RFC-Title header (if available)
+	if peerResponseHeader.RFCTitle != "" {
+		result.WriteString(fmt.Sprintf("RFC-Title: %s\r\n", peerResponseHeader.RFCTitle))
+	}
+
 	// Empty line before data
 	result.WriteString("\r\n")
 
@@ -256,7 +262,7 @@ func formatPeerResponse(peerResponseHeader data.PeerResponseHeader, peerResponse
 func readPeerResponse(reader *bufio.Reader, conn net.Conn) (data.PeerResponseHeader, string, error) {
 	fmt.Println("Reading peer response")
 	conn.SetReadDeadline(time.Now().Add(PeerResponseTimeout))
-	 
+
 	peerResponseRaw, err := reader.ReadBytes(byte('\n'))
 	fmt.Println("Peer response read successfully")
 	if err != nil {
@@ -270,6 +276,27 @@ func readPeerResponse(reader *bufio.Reader, conn net.Conn) (data.PeerResponseHea
 	}
 
 	return peerResponseHeader, peerResponseData, nil
+}
+
+// saveRFCFile saves the received RFC file to the RFCs directory
+func saveRFCFile(rfcNumber string, title string, content string) error {
+	// Ensure RFCs directory exists
+	rfcsDir := "./RFCs"
+	if err := os.MkdirAll(rfcsDir, 0755); err != nil {
+		return fmt.Errorf("error creating RFCs directory: %w", err)
+	}
+
+	// Create filename in format: <RFC_NUMBER>_<TITLE>.txt
+	filename := fmt.Sprintf("%s_%s.txt", rfcNumber, title)
+	filepath := fmt.Sprintf("%s/%s", rfcsDir, filename)
+
+	// Write the file content
+	if err := os.WriteFile(filepath, []byte(content), 0644); err != nil {
+		return fmt.Errorf("error writing RFC file: %w", err)
+	}
+
+	fmt.Printf("RFC file saved: %s\n", filepath)
+	return nil
 }
 
 // readServerResponse reads a server response from the connection
@@ -448,12 +475,13 @@ func executeCommand(conn net.Conn, input string, reader *bufio.Reader) error {
 		var wg sync.WaitGroup
 		var peerResponseHeader data.PeerResponseHeader
 		var peerResponseData string
+		var rfcNumber string
 		var getErr error
 
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			peerResponseHeader, peerResponseData, getErr = sendGetCommand(input)
+			peerResponseHeader, peerResponseData, rfcNumber, getErr = sendGetCommand(input)
 			if getErr != nil {
 				fmt.Printf("Error sending GET request: %v\n", getErr)
 				return
@@ -469,6 +497,19 @@ func executeCommand(conn net.Conn, input string, reader *bufio.Reader) error {
 		// Format and display the peer response
 		formattedResponse := formatPeerResponse(peerResponseHeader, peerResponseData)
 		fmt.Printf("%s\n", formattedResponse)
+
+		// Save the RFC file if the request was successful
+		if peerResponseHeader.Status == StatusOK {
+			// Use the title from the response header
+			title := peerResponseHeader.RFCTitle
+			if title == "" {
+				title = "RFC" // Fallback title if not provided
+			}
+
+			if err := saveRFCFile(rfcNumber, title, peerResponseData); err != nil {
+				fmt.Printf("Warning: Failed to save RFC file: %v\n", err)
+			}
+		}
 
 		return nil
 	default:
