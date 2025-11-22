@@ -13,6 +13,9 @@ const (
 	// ServerResponseTimeout is the timeout for waiting for server responses
 	ServerResponseTimeout = 5 * time.Second
 
+	// PeerResponseTimeout is the timeout for waiting for peer responses
+	PeerResponseTimeout = 50 * time.Second
+
 	// HTTP status code equivalents for P2P protocol
 	StatusOK                  = 200
 	StatusBadRequest          = 400

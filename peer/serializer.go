@@ -31,3 +31,22 @@ func SerializeListStruct(listStruct data.ListStruct) ([]byte, error) {
 	}
 	return jsonData, nil
 }
+
+// SerializePeerRequest converts PeerRequest into a JSON byte array
+func SerializePeerRequest(peerRequest data.PeerRequest) ([]byte, error) {
+	jsonData, err := json.Marshal(peerRequest)
+	if err != nil {
+		return nil, err
+	}
+	return jsonData, nil
+}
+
+// SerializePeerResponse converts PeerResponse into a JSON byte array
+func SerializePeerResponse(peerResponse data.PeerResponseHeader, responseData string) ([]byte, error) {
+	jsonData, err := json.Marshal(peerResponse)
+	jsonData = append(jsonData, responseData...)
+	if err != nil {
+		return nil, err
+	}
+	return jsonData, nil
+}

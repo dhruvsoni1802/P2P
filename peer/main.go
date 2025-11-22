@@ -7,8 +7,10 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"runtime"
 	"strings"
 	"syscall"
+	"time"
 
 	common_helpers "P2P/common-helpers"
 	"P2P/common-helpers/data"
@@ -137,13 +139,15 @@ func startCommandLoop(conn net.Conn) {
 	scanner := bufio.NewScanner(os.Stdin)
 	reader := bufio.NewReader(conn)
 	for {
-		fmt.Print("\nEnter command (ADD/LOOKUP/LIST): ")
+		fmt.Print("\nEnter command (ADD/LOOKUP/LIST/GET): ")
 
 		if !scanner.Scan() {
 			break
 		}
 
 		input := scanner.Text()
+
+
 		if err := executeCommand(conn, input, reader); err != nil {
 			fmt.Printf("Error: %v\n", err)
 		}
@@ -152,6 +156,118 @@ func startCommandLoop(conn net.Conn) {
 	if err := scanner.Err(); err != nil {
 		log.Printf("Scanner error: %v", err)
 	}
+}
+
+// sendErrorResponse sends an error response to the client
+func sendErrorResponse(conn net.Conn, code int, phrase string) error {
+	responseHeader := data.PeerResponseHeader{
+		PeerApplicationVersion:    ApplicationVersion,
+		Status:                    code,
+		Phrase:                    phrase,
+		CurrentDateandTime:        time.Now().Format(time.RFC3339),
+		OS:                        runtime.GOOS,
+		LastModifiedDateandTime:   "",
+		ContentLength:             "0",
+		ContentType:               "text/plain",
+	}
+
+	serialized, err := SerializePeerResponse(responseHeader,"")
+	if err != nil {
+		return fmt.Errorf("error serializing response: %w", err)
+	}
+
+	log.Printf("Error response created: %s", string(serialized))
+	serialized = append(serialized, '\n')
+	_, err = conn.Write(serialized)
+	log.Printf("Error response sent to client: %s", string(serialized))
+	return err
+}
+
+// sendSuccessResponse sends a success response with data to the client
+func sendSuccessResponse(conn net.Conn, rfcNumber string) error {
+
+	// Reload RFC files to include any newly added RFCs
+	entries, err := os.ReadDir("./RFCs")
+	if err != nil {
+		log.Printf("Error reading RFC directory: %v", err)
+		return sendErrorResponse(conn, 500, "Internal Server Error")
+	}
+
+	// Find the RFC file with the given number
+	var rfcFilePath string
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			filename := entry.Name()
+			if strings.HasPrefix(filename, rfcNumber+"_") {
+				rfcFilePath = "./RFCs/" + filename
+				break
+			}
+		}
+	}
+
+	fmt.Println("File path is: ", rfcFilePath)
+
+	if rfcFilePath == "" {
+		return sendErrorResponse(conn, 404, "RFC Not Found")
+	}
+
+	// Get file info for last modified time
+	fileInfo, err := os.Stat(rfcFilePath)
+	if err != nil {
+		fmt.Println("Error getting file info: ", err)
+		return sendErrorResponse(conn, 404, "RFC Not Found")
+	}
+
+	// Read the RFC file content
+	responseData, err := os.ReadFile(rfcFilePath)
+	if err != nil {
+		return sendErrorResponse(conn, 500, "Internal Server Error")
+	}
+
+	responseHeader := data.PeerResponseHeader{
+		PeerApplicationVersion:  ApplicationVersion,
+		Status:                  200,
+		Phrase:                  "OK",
+		CurrentDateandTime:      time.Now().Format(time.RFC3339),
+		OS:                      runtime.GOOS,
+		LastModifiedDateandTime: fileInfo.ModTime().Format(time.RFC3339),
+		ContentLength:           fmt.Sprintf("%d", len(responseData)),
+		ContentType:             "text/plain",
+	}
+
+	serialized, err := SerializePeerResponse(responseHeader, string(responseData))
+	if err != nil {
+		return fmt.Errorf("error serializing response: %w", err)
+	}
+
+	serialized = append(serialized, '\n')
+	_, err = conn.Write(serialized)
+	return err
+}
+
+func handlePeerRequest(conn net.Conn) error {
+	reader := bufio.NewReader(conn)
+
+	peerRequest, err := reader.ReadBytes(byte('\n'))
+	
+	if err != nil {
+		log.Printf("Error reading peer request: %v", err)
+	}
+
+	request, err := DeserializePeerRequest(peerRequest)
+	if err != nil {
+		return sendErrorResponse(conn, 400, "Bad Request")
+	}
+
+	if request.Version != ApplicationVersion {
+		return sendErrorResponse(conn, 505, "P2P-CI Version Not Supported")
+	}
+
+	if request.PeerIP == conn.LocalAddr().String() {
+		return sendErrorResponse(conn, 400, "Bad Request")
+	}
+
+	return sendSuccessResponse(conn, request.RFCNumber)
 }
 
 func main() {
@@ -200,10 +316,28 @@ func main() {
 	// Start command loop in goroutine
 	go startCommandLoop(serverConn)
 
-	// Wait for shutdown signal
+	//Set up shutdown signal handling
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-	<-sigChan
 
-	log.Println("Client shutting down...")
+	//On the main thread, we listen for requests on the upload port
+	//The request is then desrialzed into the PeerRequest struct first
+	//Then the request is handled by the handlePeerRequest function
+	for {
+		select {
+		case <-sigChan:
+			log.Println("Client Shutting down...")
+			return
+		default:
+			conn, err := uploadListener.Accept()
+			if err != nil {
+				log.Fatalf("Failed to accept upload connection: %v", err)
+			}
+
+			go func(c net.Conn) {
+				defer c.Close()
+				handlePeerRequest(c)
+			}(conn) 
+		}
+	}
 }
