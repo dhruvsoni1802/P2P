@@ -176,10 +176,8 @@ func sendErrorResponse(conn net.Conn, code int, phrase string) error {
 		return fmt.Errorf("error serializing response: %w", err)
 	}
 
-	log.Printf("Error response created: %s", string(serialized))
 	serialized = append(serialized, '\n')
 	_, err = conn.Write(serialized)
-	log.Printf("Error response sent to client: %s", string(serialized))
 	return err
 }
 
@@ -204,8 +202,6 @@ func sendSuccessResponse(conn net.Conn, rfcNumber string) error {
 			}
 		}
 	}
-
-	fmt.Println("File path is: ", rfcFilePath)
 
 	if rfcFilePath == "" {
 		return sendErrorResponse(conn, 404, "RFC Not Found")

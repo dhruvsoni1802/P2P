@@ -219,6 +219,40 @@ func formatServerResponse(serverResponse data.ServerResponse) string {
 	return result.String()
 }
 
+//Format the peer response header converting the struct to a string
+func formatPeerResponse(peerResponseHeader data.PeerResponseHeader, peerResponseData string) string {
+	var result strings.Builder
+
+	// First line: version <sp> status code <sp> phrase
+	result.WriteString(fmt.Sprintf("%s %d %s\r\n",
+		peerResponseHeader.PeerApplicationVersion,
+		peerResponseHeader.Status,
+		peerResponseHeader.Phrase))
+
+	// Date header
+	result.WriteString(fmt.Sprintf("Date: %s\r\n", peerResponseHeader.CurrentDateandTime))
+
+	// OS header
+	result.WriteString(fmt.Sprintf("OS: %s\r\n", peerResponseHeader.OS))
+
+	// Last-Modified header
+	result.WriteString(fmt.Sprintf("Last-Modified: %s\r\n", peerResponseHeader.LastModifiedDateandTime))
+
+	// Content-Length header
+	result.WriteString(fmt.Sprintf("Content-Length: %s\r\n", peerResponseHeader.ContentLength))
+
+	// Content-Type header
+	result.WriteString(fmt.Sprintf("Content-Type: %s\r\n", peerResponseHeader.ContentType))
+
+	// Empty line before data
+	result.WriteString("\r\n")
+
+	// Data
+	result.WriteString(peerResponseData)
+
+	return result.String()
+}
+
 func readPeerResponse(reader *bufio.Reader, conn net.Conn) (data.PeerResponseHeader, string, error) {
 	fmt.Println("Reading peer response")
 	conn.SetReadDeadline(time.Now().Add(PeerResponseTimeout))
@@ -432,11 +466,9 @@ func executeCommand(conn net.Conn, input string, reader *bufio.Reader) error {
 			return getErr
 		}
 
-		fmt.Printf("Received response from peer:\n")
-		fmt.Printf("Version: %s\n", peerResponseHeader.PeerApplicationVersion)
-		fmt.Printf("Status Code: %d\n", peerResponseHeader.Status)
-		fmt.Printf("Status Phrase: %s\n", peerResponseHeader.Phrase)
-		fmt.Printf("Data: %s\n", peerResponseData)
+		// Format and display the peer response
+		formattedResponse := formatPeerResponse(peerResponseHeader, peerResponseData)
+		fmt.Printf("%s\n", formattedResponse)
 
 		return nil
 	default:
