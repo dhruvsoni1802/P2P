@@ -313,6 +313,10 @@ func main() {
 
 	log.Println("All RFCs registered successfully")
 
+	//This is the IP address of the host machine used to connect to the server
+	hostIP := serverConn.LocalAddr().String()
+	log.Printf("Host IP address: %s", hostIP)
+
 	// Start command loop in goroutine
 	go startCommandLoop(serverConn)
 
@@ -323,21 +327,29 @@ func main() {
 	//On the main thread, we listen for requests on the upload port
 	//The request is then desrialzed into the PeerRequest struct first
 	//Then the request is handled by the handlePeerRequest function
-	for {
-		select {
-		case <-sigChan:
-			log.Println("Client Shutting down...")
-			return
-		default:
+	go func() {
+		for {
 			conn, err := uploadListener.Accept()
 			if err != nil {
-				log.Fatalf("Failed to accept upload connection: %v", err)
+				// Check if error is due to listener being closed (expected during shutdown)
+				if strings.Contains(err.Error(), "use of closed network connection") {
+					log.Println("Upload listener closed, shutting down accept loop")
+					return
+				}
+				log.Printf("Error accepting upload connection: %v", err)
+				return
 			}
 
 			go func(c net.Conn) {
 				defer c.Close()
 				handlePeerRequest(c)
-			}(conn) 
+			}(conn)
 		}
-	}
+	}()
+
+	// Wait for shutdown signal
+	<-sigChan
+	log.Println("Client Shutting down...")
+	uploadListener.Close()
+	serverConn.Close()
 }
