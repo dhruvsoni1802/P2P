@@ -107,30 +107,35 @@ func parseCommand(input string) (*Command, error) {
 	}, nil
 }
 
-func sendGetCommand(input string) (data.PeerResponseHeader, string, string, error) {
+func sendGetCommand(input string) (data.PeerResponseHeader, string, string) {
 	input = strings.TrimSpace(input)
 	if input == "" {
-		return data.PeerResponseHeader{}, "", "", fmt.Errorf("empty command")
+		header, data := createErrorPeerResponse("Empty command")
+		return header, data, ""
 	}
 
 	parts := strings.Fields(input)
 	if len(parts) < 4 {
-		return data.PeerResponseHeader{}, "", "", fmt.Errorf("insufficient arguments")
+		header, data := createErrorPeerResponse("Insufficient arguments")
+		return header, data, ""
 	}
 
 	method := strings.ToUpper(parts[0])
 	if method != "GET" {
-		return data.PeerResponseHeader{}, "", "", fmt.Errorf("invalid method: must be GET")
+		header, data := createErrorPeerResponse("Invalid method: must be GET")
+		return header, data, ""
 	}
 
 	rfcString := parts[1]
 	if rfcString != "RFC" {
-		return data.PeerResponseHeader{}, "", "", fmt.Errorf("GET requires RFC parameter")
+		header, data := createErrorPeerResponse("GET requires RFC parameter")
+		return header, data, ""
 	}
 
 	rfcNumber := parts[2]
 	if !isNumeric(rfcNumber) {
-		return data.PeerResponseHeader{}, "", "", fmt.Errorf("RFC number must be numeric")
+		header, data := createErrorPeerResponse("RFC number must be numeric")
+		return header, data, ""
 	}
 
 	version := parts[3]
@@ -148,10 +153,12 @@ func sendGetCommand(input string) (data.PeerResponseHeader, string, string, erro
 
 	// Validate required headers
 	if _, ok := dataSection["Host"]; !ok {
-		return data.PeerResponseHeader{}, "", "", fmt.Errorf("missing Host header")
+		header, data := createErrorPeerResponse("Missing Host header")
+		return header, data, ""
 	}
 	if _, ok := dataSection["OS"]; !ok {
-		return data.PeerResponseHeader{}, "", "", fmt.Errorf("missing OS header")
+		header, data := createErrorPeerResponse("Missing OS header")
+		return header, data, ""
 	}
 
 	//Now we create a new TCP socket to make the GET request to the other peer
@@ -160,7 +167,8 @@ func sendGetCommand(input string) (data.PeerResponseHeader, string, string, erro
 
 	conn, err := net.Dial("tcp", fmt.Sprintf("%s:%s", hostIP, hostPort))
 	if err != nil {
-		return data.PeerResponseHeader{}, "", "", fmt.Errorf("error connecting to peer: %w", err)
+		header, data := createErrorPeerResponse(fmt.Sprintf("Error connecting to peer: %v", err))
+		return header, data, ""
 	}
 
 	//Now we first figure out on which port we just created the TCP socket
@@ -177,13 +185,15 @@ func sendGetCommand(input string) (data.PeerResponseHeader, string, string, erro
 	//Now we serialize the request
 	serializedRequest, err := SerializePeerRequest(request)
 	if err != nil {
-		return data.PeerResponseHeader{}, "", "", fmt.Errorf("error serializing peer request: %w", err)
+		header, data := createErrorPeerResponse(fmt.Sprintf("Error serializing peer request: %v", err))
+		return header, data, ""
 	}
 
 	//Now we send the request to the other peer
 	message := append(serializedRequest, '\n')
 	if _, err := conn.Write(message); err != nil {
-		return data.PeerResponseHeader{}, "", "", fmt.Errorf("error sending GET request: %w", err)
+		header, data := createErrorPeerResponse(fmt.Sprintf("Error sending GET request: %v", err))
+		return header, data, ""
 	}
 
 	fmt.Println("GET request sent successfully")
@@ -192,10 +202,11 @@ func sendGetCommand(input string) (data.PeerResponseHeader, string, string, erro
 	reader := bufio.NewReader(conn)
 	peerResponseHeader, peerResponseData, err := readPeerResponse(reader, conn)
 	if err != nil {
-		return data.PeerResponseHeader{}, "", "", fmt.Errorf("error reading peer response: %w", err)
+		header, data := createErrorPeerResponse(fmt.Sprintf("Error reading peer response: %v", err))
+		return header, data, ""
 	}
 
-	return peerResponseHeader, peerResponseData, rfcNumber, nil
+	return peerResponseHeader, peerResponseData, rfcNumber
 }
 
 //Format the server response converting the struct to a string
@@ -276,6 +287,21 @@ func readPeerResponse(reader *bufio.Reader, conn net.Conn) (data.PeerResponseHea
 	}
 
 	return peerResponseHeader, peerResponseData, nil
+}
+
+// createErrorPeerResponse creates a peer error response with status 400 and an error message
+func createErrorPeerResponse(errorMsg string) (data.PeerResponseHeader, string) {
+	return data.PeerResponseHeader{
+		PeerApplicationVersion:   ApplicationVersion,
+		Status:                   StatusBadRequest,
+		Phrase:                   "Bad Request",
+		CurrentDateandTime:       time.Now().Format(time.RFC1123),
+		OS:                       "",
+		LastModifiedDateandTime:  "",
+		ContentLength:            fmt.Sprintf("%d", len(errorMsg)),
+		ContentType:              "text/plain",
+		RFCTitle:                 "",
+	}, errorMsg
 }
 
 // saveRFCFile saves the received RFC file to the RFCs directory
@@ -476,25 +502,16 @@ func executeCommand(conn net.Conn, input string, reader *bufio.Reader) error {
 		var peerResponseHeader data.PeerResponseHeader
 		var peerResponseData string
 		var rfcNumber string
-		var getErr error
 
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			peerResponseHeader, peerResponseData, rfcNumber, getErr = sendGetCommand(input)
-			if getErr != nil {
-				fmt.Printf("Error sending GET request: %v\n", getErr)
-				return
-			}
+			peerResponseHeader, peerResponseData, rfcNumber = sendGetCommand(input)
 		}()
 
 		wg.Wait()
 
-		if getErr != nil {
-			return getErr
-		}
-
-		// Format and display the peer response
+		// Format and display the peer response (including error responses)
 		formattedResponse := formatPeerResponse(peerResponseHeader, peerResponseData)
 		fmt.Printf("%s\n", formattedResponse)
 
